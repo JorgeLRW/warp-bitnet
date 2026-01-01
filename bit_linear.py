@@ -35,28 +35,28 @@ class BitLinear(nn.Module):
                 self.bias.data.copy_(bias)
                 
     def forward(self, x):
-        # x shape: (batch_size, in_features) or (in_features)
-        # Our kernel currently supports (in_features) -> (out_features) i.e. GEMV
+        # Handle arbitrary input shapes (e.g., [batch, seq, hidden] or [batch, hidden])
+        orig_shape = x.shape
         
-        if x.dim() == 2:
-            # Batch mode - Naive loop for now (Kernel is GEMV)
-            # Ideally we would update kernel to support GEMM for high batch size
-            batch_size, dim = x.shape
-            out = torch.empty(batch_size, self.out_features, dtype=torch.float16, device=x.device)
+        # Flatten to 2D: (num_tokens, in_features)
+        x_flat = x.view(-1, self.in_features)
+        num_tokens = x_flat.shape[0]
+        
+        out_flat = torch.empty(num_tokens, self.out_features, dtype=torch.float16, device=x.device)
+        
+        # Process each token (Naive loop for GEMV kernel)
+        # Note: This is slow for large sequences (prefill). 
+        # A real implementation would use a fused GEMM kernel.
+        for i in range(num_tokens):
+            # Ensure input is contiguous for the kernel
+            x_i = x_flat[i].contiguous()
+            warp_bitnet_cuda.gemv(self.packed_weight, x_i, out_flat[i])
             
-            for i in range(batch_size):
-                warp_bitnet_cuda.gemv(self.packed_weight, x[i], out[i])
-                
-            if self.bias is not None:
-                out += self.bias
-            return out
+        if self.bias is not None:
+            out_flat += self.bias
             
-        elif x.dim() == 1:
-            out = torch.empty(self.out_features, dtype=torch.float16, device=x.device)
-            warp_bitnet_cuda.gemv(self.packed_weight, x, out)
-            if self.bias is not None:
-                out += self.bias
-            return out
+        # Reshape back to original dimensions
+        return out_flat.view(*orig_shape[:-1], self.out_features)
 
 class BitNetMLP(nn.Module):
     """

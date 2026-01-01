@@ -3,7 +3,7 @@ from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 
 setup(
     name='warp_bitnet_cuda',
-    version='1.0.0',
+    version='2.0.0',
     ext_modules=[
         CUDAExtension(
             name='warp_bitnet_cuda',
@@ -23,5 +23,5 @@ setup(
     cmdclass={
         'build_ext': BuildExtension
     },
-    description='Warp BitNet v6.5 - Production 1.58-bit inference',
+    description='Warp BitNet Lite - Open Source 1.58-bit inference',
 )

@@ -3,42 +3,38 @@ import numpy as np
 
 def pack_ternary_weights(weights):
     """
-    Packs a ternary weight matrix ({-1, 0, 1}) into a 2-bit packed int32 tensor.
+    Packs a ternary weight matrix ({-1, 0, 1}) into a 4-bit packed int32 tensor.
     
     Args:
         weights: Float tensor of shape (rows, cols) containing values {-1, 0, 1}.
-                 Cols must be divisible by 16.
+                 Cols must be divisible by 8.
     
     Returns:
-        packed_weights: Int32 tensor of shape (rows, cols // 16).
+        packed_weights: Int32 tensor of shape (rows, cols // 8).
     """
     rows, cols = weights.shape
-    assert cols % 16 == 0, "Columns must be divisible by 16 for packing"
+    assert cols % 8 == 0, "Columns must be divisible by 8 for packing"
     
-    # Map {-1, 0, 1} to {2, 0, 1} (2-bit representation)
-    # 0 -> 00 (0)
-    # 1 -> 01 (1)
-    # -1 -> 10 (2)
+    # Map {-1, 0, 1} to {2, 0, 1} (4-bit representation, only using 2 bits)
+    # 0 -> 0
+    # 1 -> 1
+    # -1 -> 2
     
     w_int = weights.to(torch.int8)
     
     # Create the mapping
-    # We want: 0->0, 1->1, -1->2
-    # Simple formula: (val + (val < 0) * 3) % 4 ? 
-    # Let's be explicit to be safe
     w_mapped = torch.zeros_like(w_int, dtype=torch.int32)
     w_mapped[w_int == 1] = 1
     w_mapped[w_int == -1] = 2
     
-    # Reshape to (rows, cols // 16, 16) to process chunks
-    w_reshaped = w_mapped.view(rows, cols // 16, 16)
+    # Reshape to (rows, cols // 8, 8) to process chunks
+    w_reshaped = w_mapped.view(rows, cols // 8, 8)
     
-    packed = torch.zeros((rows, cols // 16), dtype=torch.int32, device=weights.device)
+    packed = torch.zeros((rows, cols // 8), dtype=torch.int32, device=weights.device)
     
-    # Pack 16 weights into one int32
-    # We shift each weight by 2*i bits
-    for i in range(16):
-        packed |= (w_reshaped[:, :, i] << (2 * i))
+    # Pack 8 weights into one int32 (4 bits each)
+    for i in range(8):
+        packed |= (w_reshaped[:, :, i] << (4 * i))
         
     return packed
 
@@ -51,33 +47,23 @@ def unpack_ternary_weights(packed, original_shape):
     
     unpacked = torch.zeros(original_shape, dtype=torch.float32, device=packed.device)
     
-    for i in range(16):
-        # Extract 2 bits
-        mask = 3  # binary 11
-        val = (packed_view >> (2 * i)) & mask
+    # Unpack 8 weights from each int32 (4 bits each)
+    unpacked = torch.zeros(original_shape, dtype=torch.float32, device=packed.device)
+    
+    for i in range(8):
+        # Extract 4 bits
+        mask = 0xF  # binary 1111
+        val = (packed_view >> (4 * i)) & mask
         
         # Map back: 0->0, 1->1, 2->-1
-        # We can do this by creating a lookup or masking
-        # val 1 -> 1.0
-        # val 2 -> -1.0
-        
-        col_idx = torch.arange(i, cols, 16, device=packed.device)
-        
-        # We need to scatter this properly, but for simple verification:
-        # Let's just build it up
-        # This is slow, but it's just for verification
-        
-        # Vectorized mapping
         mapped_val = torch.zeros_like(val, dtype=torch.float32)
         mapped_val[val == 1] = 1.0
         mapped_val[val == 2] = -1.0
         
         # Place into output
-        # This is tricky with the view, let's just return the flat chunks for now
-        # Actually, let's just use a list comprehension for the columns
-        pass 
+        unpacked[:, i::8] = mapped_val.squeeze(-1)
         
-    return unpacked # Placeholder, we'll trust the packer for now or write a proper unpacker later
+    return unpacked
 
 if __name__ == "__main__":
     # Test the packer

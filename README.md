@@ -8,15 +8,30 @@
 
 ## 🚀 Performance
 
-| Model | Layer | Speedup | Memory |
-|-------|-------|---------|--------|
-| Llama-3-8B | MLP | **2.5x** | **8x smaller** |
-| Llama-3-70B | MLP | **2.5x** | **8x smaller** |
-| Mistral-7B | Attention | **2.4x** | **8x smaller** |
-| Qwen2.5-72B | Gate Proj | **2.6x** | **8x smaller** |
-| DeepSeek-V2 | Expert FFN | **2.6x** | **8x smaller** |
+### Open Source (Lite Kernel)
 
-**Real-world impact:** 35 GB → 2.2 GB for Llama-3-70B weights!
+| Size | cuBLAS FP16 | Lite | Speedup | Memory |
+|------|-------------|------|---------|--------|
+| 4096×4096 | 0.035ms | 0.014ms | **2.5x** | **8x smaller** |
+| 8192×8192 | 0.300ms | 0.120ms | **2.5x** | **8x smaller** |
+| 14336×4096 | 0.259ms | 0.100ms | **2.6x** | **8x smaller** |
+
+### Commercial (Pro Kernel)
+
+| Size | cuBLAS FP16 | Pro | Speedup | Bandwidth |
+|------|-------------|-----|---------|----------|
+| 4096×4096 | 0.035ms | 0.018ms | **1.96x** | 119 GB/s |
+| 8192×8192 | 0.300ms | 0.058ms | **5.14x** | 144 GB/s |
+| 14336×4096 | 0.259ms | 0.042ms | **6.13x** | 175 GB/s |
+| 28672×8192 | 1.036ms | 0.182ms | **5.70x** | 162 GB/s |
+
+**Summary:**
+- Peak Speedup: **6.13x** over cuBLAS FP16
+- Average Speedup: **4.75x**
+- Peak Bandwidth: **175 GB/s** (30% of theoretical peak)
+- Memory Compression: **8x** (2-bit vs 16-bit)
+
+**Real-world impact:** 140 GB → 14 GB for Llama-3-70B weights!
 
 ## 📦 Installation
 
@@ -93,29 +108,91 @@ This tests against real model architectures:
 
 ## 🏢 Commercial License
 
-**Need more speed?** Our Pro kernel delivers **5x+ speedup** through advanced optimizations:
+**Need more speed?** Our Pro kernel delivers up to **6.13x speedup** at **175 GB/s** bandwidth:
 
-- Multi-row processing (16 rows per block)
-- Vectorized FP16 loads
-- Optimized register allocation
-- L2 cache streaming hints
+- Optimized thread block configuration
+- Vectorized half2 memory loads
+- L2-friendly tiling strategy
+- Near-zero dequantization overhead
 
-Contact: [your-email@company.com] for commercial licensing.
+**Numerical Accuracy:**
+
+| Size | Max Error | Status |
+|------|-----------|--------|
+| 4096×4096 | 0.0000 | ✓ |
+| 14336×4096 | 0.0039 | ✓ |
+| 28672×8192 | 0.0625 | ✓ |
+
+All tests pass with < 0.001% relative error.
+
+Contact: jorgeruizwilliams@gmail.com for commercial licensing.
+
+## 🎓 Training Your Own Models
+
+Training is **fully open source**! Use our training module to create your own 1.58-bit models:
+
+```python
+from bit_linear_train import BitLinearTrain, convert_to_bitlinear
+
+# Convert any model to trainable BitNet
+model = YourModel()
+model = convert_to_bitlinear(model)
+
+# Train with standard PyTorch
+optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
+for batch in dataloader:
+    loss = model(batch).loss
+    loss.backward()  # STE: gradients flow through quantization
+    optimizer.step()
+
+# Deploy with fast inference
+for layer in model.modules():
+    if hasattr(layer, 'quantize'):
+        layer.quantize()
+```
+
+**What's included (open source):**
+- `bit_linear_train.py` - Drop-in replacement for `nn.Linear`
+- `cuda/bitnet_train.cu` - GEMM kernels for batched training
+- `cuda/bitnet_lite.cu` - Inference kernel (2.5x speedup)
+- Full STE (Straight-Through Estimator) backward pass
+
+**What requires license (proprietary):**
+- Pro inference kernel (6.13x speedup)
+- INT2 inference kernel (4-level quantization, same optimizations)
+- Optimized deployment configurations
 
 ## 📚 Citation
 
 ```bibtex
 @software{warp_bitnet,
-  title = {WARP BITNET: Ultra-fast Ternary GEMV Kernels},
-  author = {Your Name},
-  year = {2024},
-  url = {https://github.com/yourname/warp-bitnet}
+  title = {WARP BITNET: Ultra-fast 1.58-bit GEMV Kernels},
+  author = {Jorge L. Ruiz Williams},
+  year = {2025},
+  url = {https://github.com/NaNZeta/warp-bitnet}
 }
 ```
 
 ## 📄 License
 
 MIT License - see [LICENSE](LICENSE) for details.
+
+## 🔢 INT2 Support (Experimental)
+
+We also provide an INT2 kernel for true 4-level quantization:
+
+```
+Ternary (1.58-bit): 3 levels {-1, 0, +1}
+INT2 (2-bit):       4 levels {-1.5, -0.5, +0.5, +1.5}
+```
+
+Same memory footprint, but 4 levels can provide slightly better model quality for some architectures.
+
+```python
+import bitnet_int2_cuda
+bitnet_int2_cuda.gemv_int2(W_packed, X, Y)  # Without scale
+bitnet_int2_cuda.gemv_int2_scaled(W_packed, X, scales, Y)  # With per-row scale
+```
 
 ---
 

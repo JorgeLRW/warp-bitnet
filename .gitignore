@@ -21,5 +21,25 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
-# Pro kernel (not for open source release)
+# ============================================
+# PROPRIETARY (not for open source release)
+# ============================================
 cuda/bitnet_pro.cu
+cuda/bitnet_int2.cu
+cuda/bitnet_sweep.cu
+experimental/
+paper/
+archive/
+
+# ============================================
+# PUBLIC (on GitHub):
+# ============================================
+# cuda/bitnet_lite.cu   - Lite inference (2.5x speedup)
+# bit_linear.py         - Inference module
+# bit_linear_train.py   - Training module (STE)
+# packer.py             - Weight packing
+# setup.py              - Build script
+# benchmark.py          - User can test lite kernel
+# prove_benchmark.py    - Validate against real models
+# README.md, LICENSE    - Documentation
+# ============================================
